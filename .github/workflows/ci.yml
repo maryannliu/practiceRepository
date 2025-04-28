@@ -1,0 +1,86 @@
+name: Backend CI
+
+on: # define event that will trigger the workflow 
+  push: # define the trigger to be a push event 
+    branches:
+      - main  # Trigger CI on pushes to the main branch
+
+
+jobs: # define the jobs that will be run in the workflow 
+  test: # The first job is of the type test
+
+    # PREPARATION TO RUN THE JOB
+    name: Run Tests # name of the job
+    runs-on: self-hosted # run on a server I set up myself instead of on GitHub server
+
+    strategy: # the strategy that will be used to run the job
+      matrix: # matrix means I can specify multiple variations
+        node-version: [22] # Test on Node.js version 22
+        # For testing on multiple version, try the line: matrix: node-version: [18, 20, 22]
+
+
+
+    environment: MONGO_URI # go to .env and extract the MONGO_URI to know how to connect to Mongo DB
+
+    # STEPS TO BE RUN IN THE JOB
+    steps: 
+    - name: Checkout Code
+      uses: actions/checkout@v3 # use GitHub's predefined code to download the code to EC2
+
+    # Set up Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+
+    # Check if the secrets were set up correctly in GitHub so they can be passed to the server
+    - name: Print Env Secret 
+
+      env:
+        MONGO_URI: ${{ secrets.MONGO_URI }}
+        JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        PORT: ${{ secrets.PORT }}
+      run: | 
+        echo "Secret 1 is: $MONGO_URI" 
+        echo "Secret 2 is: $JWT_SECRET"
+        echo "Secret 3 is: $PORT"
+      
+    - run: pm2 stop all
+
+    # Install necessary library for backend
+    - name: Install Backend Dependencies
+      working-directory: ./backend
+      run: | 
+       npm install --global yarn
+       yarn --version 
+       yarn install
+      
+    # Install dependencies for frontend
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: |
+        df -h 
+        sudo rm -rf ./build
+        yarn install
+        yarn run build
+      # go to frontend, check the package.json file, find script for build, exsecute build defined in there, optimize the files and store them in a build folder
+
+    # Run backend tests
+    - name: Run Backend Tests
+      env:
+        MONGO_URI: ${{ secrets.MONGO_URI }}
+        JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        PORT: ${{ secrets.PORT }}
+      working-directory: ./backend
+      run: npm test
+
+
+    - run: npm ci # install what is inside package-lock.json
+    - run: | 
+        cd ./backend
+        touch .env
+        echo "${{ secrets.PROD }}" > .env
+
+    - run: pm2 start all
+
+    - run: pm2 restart all
